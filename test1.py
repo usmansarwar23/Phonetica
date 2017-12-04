@@ -11,7 +11,7 @@ import psycopg2
 import time 
 from datetime import timedelta,datetime
 import datetime
-
+import os
 #global variables
 translated_message_text=' '
 userTest=' '
