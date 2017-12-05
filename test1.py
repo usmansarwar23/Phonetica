@@ -11,7 +11,7 @@ import psycopg2
 import time 
 from datetime import timedelta,datetime
 import datetime
-import os
+
 #global variables
 translated_message_text=' '
 userTest=' '
@@ -31,6 +31,7 @@ flag_api_ai=0
 # HERE flag_input=0 (Donot Forwards the input), flag_input=1 (forward the input), flag_input=5 (append the previous message to new one)
 flag_input=0
 
+flag_bypass=0
 
 
 
@@ -85,8 +86,8 @@ cur = conn.cursor()
 sender_messages=''
 
 def checks_responses(translated_message_text,message_text):
-    #if the api.ai return an empty string
 
+    #if the api.ai return an empty string
     global flag_api_ai,flag_google_translate
 
     if (not userTest):
@@ -107,12 +108,35 @@ def checks_responses(translated_message_text,message_text):
     else:   
         flag_google_translate=0
 
-def checks_input(query_number,temp_time,sender_messages,message_text):
-    global flag_input
-   #if the time interval is less than 4 and message length is less than the 3 and previous message length is greater than 3
-   
 
-    if(temp_time.total_seconds()<4.0 and len(message_text.split())<5 and len(sender_messages[query_number][7].split())<5):
+def checks_input(query_number,temp_time,sender_messages,message_text):
+    global flag_input,flag_bypass
+   #if the time interval is less than 4 and message length is less than the 3 and previous message length is greater than 3
+    if(temp_time.total_seconds()>4.0 and len(message_text.split())<2):
+    	logging.info("GREETINGS............")
+
+    	translator = Translator()
+    	detected_lang = translator.detect(message_text).lang
+    	logging.info(message_text)
+    	logging.info(detected_lang)
+
+    	logging.info(len(detected_lang))
+    	logging.info(detected_lang.find('en'))
+
+    	if (detected_lang.find('en')!=-1):
+	    	flag_input=1
+#	    	flag_bypass=1
+
+
+#we have Two option
+#Either we only focus on the time interval or convsider the length
+#if we only focus on Time interval we can concatinate till a particular length is attained.
+#We can see that if previous message and current message are less than 4 than concatinate else they remain separate entitty in this case 
+#we can only concatinate two sentences in this case
+#If we consider the sentence length then we can divide a sentence into many chunks
+    #if(temp_time.total_seconds()<4.0 and len(message_text.split())<4 and len(sender_messages[query_number][7].split())<4):
+    if(temp_time.total_seconds()<4.0 and len(sender_messages[query_number][7].split())<4):
+
         logging.info("ONE")
         #user_id is the sender's latest id
         message_id_updated=sender_messages[query_number][6]
@@ -125,8 +149,7 @@ def checks_input(query_number,temp_time,sender_messages,message_text):
         logging.info("COMBINED MESSAGE")
         logging.info(message_text)
 
-        if(len(message_text.split())>4):
-
+        if(len(message_text.split())>3):
             flag_input=1
         else:
             #flag_input=5 means more than two joining sentences
@@ -150,12 +173,12 @@ def checks_input(query_number,temp_time,sender_messages,message_text):
         conn.commit()
         
     #IF THE TIME interval is is greathan than four and text length is greater than 3 that is normal text
-    elif(temp_time.total_seconds()>=4.0 and len(message_text.split())>=5):
+    elif(temp_time.total_seconds()>=4.0 and len(message_text.split())>=4):
         flag_input=1
         logging.info("TWO")
 
             
-    elif(temp_time.total_seconds()<4.0 and len(message_text.split())<5 and len(sender_messages[query_number][7].split())>=5):
+    elif(temp_time.total_seconds()<4.0 and len(message_text.split())<4 and len(sender_messages[query_number][7].split())>=4):
 
         logging.info("THREE MESSAGES")
         logging.info(message_text)
@@ -163,6 +186,15 @@ def checks_input(query_number,temp_time,sender_messages,message_text):
         flag_input=1
         logging.info("Three")
 
+    elif(temp_time.total_seconds()<4.0 and len(message_text.split())>=4 and len(sender_messages[query_number][7].split())>=4):
+
+        logging.info("FOUR MESSAGES")
+        logging.info(message_text)
+
+        flag_input=1
+        logging.info("FOUR")
+
+	
  #   elif(temp_time.total_seconds()>=4.0 and len(message_text.split())<5):
  #       flag_input=1
  #       logging.info("TWO")
@@ -220,13 +252,12 @@ def handle_message():
 
                         if(len(sender_messages1)==0):
                              msg_time1=msg_time- timedelta(hours=9)
-
-                             data = (9,9,9,msg_time1,sender_id.encode('utf8'), "DUMMY MESSAGE ID","DUMMY MESSAGE", " ", " "," ")
+                             data = (9,9,9,msg_time1,sender_id, "DUMMY MESSAGE ID","DUMMY MESSAGE", " ", " "," ")
                              cur.execute(query, data)
                              conn.commit()   
 
                         #inserting the input into db immidiately after the input
-                        data = (9,9,9,msg_time,sender_id.encode('utf8'), comment_id.split('$')[1],message_text, " ", " "," ")
+                        data = (9,9,9,msg_time,sender_id, comment_id.split('$')[1],message_text, " ", " "," ")
                         cur.execute(query, data)
                         conn.commit()                       
 
@@ -258,6 +289,7 @@ def handle_message():
                                     userTest=parse_user_message(translated_message_text)
                                     flag_google_translate=0
                                     flag_api_ai=0
+                                    flag_bypass=0
                                 else:
                                     translated_message_text = " "
                                     userTest=" "
@@ -265,6 +297,8 @@ def handle_message():
                                     flag_api_ai=0
                                     
                             except Exception as e:
+                            	print("ERROR:")
+                            	print(e)
                                 translated_message_text=" "
                                 userTest=" "
                                 flag_google_translate=3
@@ -274,14 +308,10 @@ def handle_message():
                             checks_responses(translated_message_text,message_text)
 
                             if(flag_input==1):
+                                send_message_response(sender_id,comment_id.split('$')[1] , userTest)
+                                send_message_response(sender_id,comment_id.split('$')[1], 'Is the Reponse Ok?')
 
-                                try:
-                                    send_message_response(sender_id,comment_id.split('$')[1] , userTest)
-                                    send_message_response(sender_id,comment_id.split('$')[1], 'Is the Reponse Ok?')
-                                except Exception as e:                       
-                                    send_message_response(sender_id,comment_id.split('$')[1], 'Service is currently unavailable please try again later.')
-
-                            cur.execute("""UPDATE response8 SET inputFlag=(%s),apiFlag=(%s),googleTranslateFlag=(%s),inputMessage=(%s),translatedMessage=(%s),apiResponse=(%s),message_id=(%s) WHERE message_id=(%s)""", (flag_input,flag_api_ai,flag_google_translate,message_text.encode('utf8'),translated_message_text.encode('utf8'),userTest.encode('utf8'),comment_id.split('$')[1],comment_id.split('$')[1]))
+                            cur.execute("""UPDATE response8 SET inputFlag=(%s),apiFlag=(%s),googleTranslateFlag=(%s),inputMessage=(%s),translatedMessage=(%s),apiResponse=(%s),message_id=(%s) WHERE message_id=(%s)""", (flag_input,flag_api_ai,flag_google_translate,message_text,translated_message_text,userTest,comment_id.split('$')[1],comment_id.split('$')[1]))
                             conn.commit()
                             flag_input=0
 
@@ -296,7 +326,7 @@ def handle_message():
                         except Exception as e:
                             message_id_payload='1'
 
-                        a=message_text.split('@')[0].encode('utf8')
+                        a=message_text.split('@')[0]
                         cur1.execute("""UPDATE response8 SET userOption= (%s) WHERE message_id=(%s)""", (a,message_id_payload))
                         conn1.commit()
                         conn1.close()
@@ -308,6 +338,9 @@ def handle_message():
                     logging.info("Sender ID")
                     logging.info(sender_id)
 
+                    logging.info("Translated Message")
+                    logging.info(translated_message_text)
+
                     logging.info("API RESPONSE")
                     logging.info(userTest)
     return "ok"
@@ -316,14 +349,22 @@ def google_translate(user_text):
     '''
     this function will translate the received text using google translate
     '''
+    global flag_bypass
+    logging.info('FLAG BY PASS')
+    logging.info(flag_bypass)
     translator = Translator()
     detected_lang = translator.detect(user_text).lang
 
-    if detected_lang == 'en':
+    logging.info("LANGUAGE")
+    logging.info(detected_lang)
+
+    if(detected_lang.find('en')!=-1):
+
         trans_input = user_text
         print(trans_input)
         return trans_input
     else:
+    	logging.info("TEXT Translated")
         mid_trans = translator.translate(user_text, src="hi", dest = "ur").text
         trans_input = translator.translate(mid_trans, src = "ur", dest = "en").text
         print(trans_input)
@@ -371,6 +412,7 @@ def parse_user_message(user_text):
     The bot response is appened with weaher data fetched from
     open weather map client
     '''
+    print("PARSE USER MESSAG " + str(time.time()) )
 
     request = ai.text_request()
     request.query = user_text
@@ -399,4 +441,4 @@ def parse_user_message(user_text):
 #    return sentence
 
 if __name__ == '__main__':
-    app.run(port=9090)
+    app.run()
